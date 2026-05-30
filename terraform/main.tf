@@ -28,7 +28,7 @@ resource "datadog_monitor" "cpu_usage_alert" {
   name               = "Alerta: CPU Alta nos Containers - Joao Breno"
   type               = "metric alert"
   message            = "O container {{container_name.name}} esta com uso de CPU elevado ({{value}}%). @joao.silva@deal.com.br"
-  
+
   # Esta query olha a média de CPU por container nos últimos 5 minutos
   query = "avg(last_5m):avg:docker.cpu.usage{*} by {container_name} > 80"
 

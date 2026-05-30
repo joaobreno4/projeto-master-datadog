@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Arquivos de baseline e exemplos que não são segredos reais"
+paths = [
+  # detect-secrets armazena hashes SHA256 dos segredos encontrados — o próprio
+  # hash pode disparar regras de "generic-api-key" por ter alta entropia.
+  '''.secrets.baseline''',
+  # Arquivos de exemplo têm placeholders, não credenciais reais.
+  '''.*\.example$''',
+]

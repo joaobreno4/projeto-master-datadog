@@ -1,0 +1,99 @@
+name: DevSecOps
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── 1. Secret Scanning ──────────────────────────────────────────────────────
+  # gitleaks varre todo o histórico git em busca de credenciais expostas.
+  # Falha o pipeline antes de qualquer build se detectar segredo.
+  secret-scan:
+    name: Secret Scanning (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # histórico completo para escanear todos os commits
+
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── 2. Dependency Vulnerability Scan ────────────────────────────────────────
+  # pip-audit verifica cada pacote do requirements.txt contra o banco de dados
+  # OSV (Open Source Vulnerabilities) e PyPI Advisory Database.
+  dependency-scan:
+    name: Dependency Scan (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Audit Python dependencies
+        run: |
+          pip-audit \
+            -r app/requirements.txt \
+            --format json \
+            -o pip-audit-report.json || true
+          pip-audit -r app/requirements.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+
+  # ── 3. Container Image Scan ─────────────────────────────────────────────────
+  # trivy escaneia a imagem Docker construída em busca de CVEs no SO base
+  # (Debian slim) e nos pacotes Python instalados.
+  # Falha em CVEs CRITICAL ou HIGH com fix disponível.
+  container-scan:
+    name: Container Scan (trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t store-api:ci ./app
+
+      - name: Scan image with trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: store-api:ci
+          format: sarif
+          output: trivy-report.sarif
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload trivy SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-report.sarif
+
+  # ── 4. IaC Scan ─────────────────────────────────────────────────────────────
+  # trivy também escaneia arquivos Terraform em busca de misconfigurations:
+  # permissões excessivas, recursos públicos acidentais, ausência de criptografia.
+  iac-scan:
+    name: IaC Scan — Terraform (trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan Terraform with trivy
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          scan-type: config
+          scan-ref: ./terraform
+          format: table
+          exit-code: "0"   # informativo: não falha o pipeline por IaC

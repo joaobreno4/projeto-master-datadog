@@ -1,0 +1,4 @@
+# Copie para terraform.tfvars e preencha com suas chaves reais.
+# NUNCA commite terraform.tfvars — ele está no .gitignore.
+datadog_api_key = "your_datadog_api_key_here"  # pragma: allowlist secret
+datadog_app_key = "your_datadog_app_key_here"  # pragma: allowlist secret
