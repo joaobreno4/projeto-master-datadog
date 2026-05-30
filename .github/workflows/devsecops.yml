@@ -36,7 +36,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: pip install --upgrade pip pip-audit
 
       - name: Audit Python dependencies
         run: |
@@ -66,7 +66,7 @@ jobs:
         run: docker build -t store-api:ci ./app
 
       - name: Scan image with trivy
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: store-api:ci
           format: sarif
@@ -91,7 +91,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Scan Terraform with trivy
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: config
           scan-ref: ./terraform

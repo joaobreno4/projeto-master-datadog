@@ -1,5 +1,7 @@
-fastapi==0.111.0
-uvicorn[standard]==0.29.0
+# fastapi atualizado de 0.111.0 → >=0.115.0 para puxar starlette>=1.0.1
+# e corrigir CVE-2024-47874, CVE-2025-54121, PYSEC-2026-161 detectados pelo pip-audit.
+fastapi>=0.115.0
+uvicorn[standard]>=0.29.0
 sqlalchemy==2.0.30
 psycopg2-binary==2.9.9
 redis==5.0.4
