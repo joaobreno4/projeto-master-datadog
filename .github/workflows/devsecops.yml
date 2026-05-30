@@ -56,9 +56,14 @@ jobs:
   # trivy escaneia a imagem Docker construída em busca de CVEs no SO base
   # (Debian slim) e nos pacotes Python instalados.
   # Falha em CVEs CRITICAL ou HIGH com fix disponível.
+  # O upload SARIF requer security-events: write (habilitado abaixo) para
+  # publicar os resultados na aba Security → Code Scanning do repositório.
   container-scan:
     name: Container Scan (trivy)
     runs-on: ubuntu-latest
+    permissions:
+      security-events: write   # necessário para upload-sarif publicar no GitHub
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -76,7 +81,7 @@ jobs:
           ignore-unfixed: true
 
       - name: Upload trivy SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-report.sarif

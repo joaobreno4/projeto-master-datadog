@@ -7,25 +7,18 @@ psycopg2-binary==2.9.9
 redis==5.0.4
 pydantic==2.7.1
 
-# setuptools >= 80.x removeu pkg_resources, que opentelemetry-instrumentation
-# 0.46b0 ainda importa. Pinamos abaixo do corte enquanto aguardamos a fix
-# upstream (prevista para 0.47b0+, que migrará para importlib.metadata).
-setuptools>=65.0.0,<80.0.0
-
 # ── OpenTelemetry — Core ──────────────────────────────────────────────────────
-# API: contratos estáveis (TracerProvider, MeterProvider, get_tracer, etc.)
-# SDK: implementação concreta dos providers com exportadores e processadores
-opentelemetry-api==1.25.0
-opentelemetry-sdk==1.25.0
+# Pin atualizado de 1.25.0 → 1.42.1 para acompanhar instrumentation 0.63b1.
+# A remoção do pin setuptools<80.0.0 também foi possível porque a 0.63b1+
+# não usa mais pkg_resources (migrou para importlib.metadata — ver PEP 451).
+opentelemetry-api==1.42.1
+opentelemetry-sdk==1.42.1
 
-# ── OTLP Exporter — gRPC → Datadog Agent :4317 ───────────────────────────────
-# Envia spans e métricas via Protocol Buffers sobre gRPC.
-# O Datadog Agent (>= 7.36) aceita OTLP nativamente sem precisar de Collector.
-opentelemetry-exporter-otlp-proto-grpc==1.25.0
+# ── OTLP Exporter — gRPC → OTel Collector :4317 ─────────────────────────────
+opentelemetry-exporter-otlp-proto-grpc==1.42.1
 
 # ── Auto-instrumentação ───────────────────────────────────────────────────────
-# Cada pacote patcha a lib alvo e cria spans automaticamente.
-# Versão 0.46b0 é o companion beta do SDK 1.25.0 (versões sempre caminham juntas).
-opentelemetry-instrumentation-fastapi==0.46b0
-opentelemetry-instrumentation-sqlalchemy==0.46b0
-opentelemetry-instrumentation-redis==0.46b0
+# 0.63b1 é o companion beta do SDK 1.42.1 (versões sempre caminham juntas).
+opentelemetry-instrumentation-fastapi==0.63b1
+opentelemetry-instrumentation-sqlalchemy==0.63b1
+opentelemetry-instrumentation-redis==0.63b1
