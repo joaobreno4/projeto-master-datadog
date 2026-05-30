@@ -1,25 +1,121 @@
 services:
+
+  # ── Datadog Agent ─────────────────────────────────────────────────────────
+  # Responsabilidade: logs (container_collect_all), métricas de infra (CPU/mem/docker)
+  # e process monitoring. NÃO recebe mais OTLP — isso é papel do otel-collector.
   datadog-agent:
     container_name: datadog-agent
-    image: datadog/agent:latest  # <--- Mudança aqui
+    image: datadog/agent:7
     environment:
       - DD_API_KEY=${DD_API_KEY}
       - DD_SITE=${DD_SITE}
+      - DD_ENV=${DD_ENV}
+
+      # ── Logs ──────────────────────────────────────────────────────────────
       - DD_LOGS_ENABLED=true
       - DD_LOGS_CONFIG_CONTAINER_COLLECT_ALL=true
+
+      # ── Process Monitoring ─────────────────────────────────────────────────
       - DD_PROCESS_AGENT_ENABLED=true
+
+      # ── APM receiver legado (não mais usado pela app OTel) ─────────────────
+      # Mantido para compatibilidade — não prejudica nada ter ligado.
+      - DD_APM_ENABLED=true
+      - DD_APM_NON_LOCAL_TRAFFIC=true
+
+      # ── DogStatsD ─────────────────────────────────────────────────────────
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+
+    ports:
+      - "8125:8125/udp"   # DogStatsD (legado)
+      - "8126:8126/tcp"   # APM receiver legado
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - /proc/:/host/proc/:ro
       - /sys/fs/cgroup/:/host/sys/fs/cgroup:ro
     restart: unless-stopped
 
-  minha-app:
-    container_name: minha-app
-    image: nginx:alpine
+  # ── OpenTelemetry Collector ────────────────────────────────────────────────
+  # Recebe traces e métricas da app via OTLP gRPC :4317 e exporta diretamente
+  # para a Datadog API (us5.datadoghq.com) usando o Datadog exporter nativo.
+  #
+  # Por que otel-collector-contrib e não o core?
+  #   O "contrib" inclui o exporter "datadog" que não existe no core.
+  #   Exporter datadog: converte spans OTel → formato Datadog APM, OTel Metrics
+  #   → Datadog metrics (com mapeamento de UST tags via resource attributes).
+  otel-collector:
+    container_name: otel-collector
+    image: otel/opentelemetry-collector-contrib:latest
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol/config.yaml:ro
+    environment:
+      - DD_API_KEY=${DD_API_KEY}
     ports:
-      - "8081:80"
+      - "4317:4317/tcp"   # OTLP gRPC  ← a app envia para cá
+      - "4318:4318/tcp"   # OTLP HTTP  ← para debugging manual
+    restart: unless-stopped
+
+  # ── FastAPI Application ────────────────────────────────────────────────────
+  app:
+    container_name: store-api
+    build: ./app
+    ports:
+      - "8000:8000"
+    environment:
+      # Unified Service Tagging — lidos pelo main.py para o OTel Resource.
+      - DD_ENV=${DD_ENV}
+      - DD_SERVICE=${DD_SERVICE}
+      - DD_VERSION=${DD_VERSION}
+
+      # DD_AGENT_HOST aponta agora para o otel-collector, não para o agent.
+      # Em main.py: _otlp_endpoint = f"{DD_AGENT_HOST}:4317"
+      - DD_AGENT_HOST=otel-collector
+
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
     labels:
-      com.datadoghq.ad.logs: '[{"source": "nginx", "service": "webapp-joao"}]'
+      com.datadoghq.ad.logs: '[{"source": "python", "service": "${DD_SERVICE}"}]'
     depends_on:
-      - datadog-agent
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+      datadog-agent:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  postgres:
+    container_name: store-postgres
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis ──────────────────────────────────────────────────────────────────
+  redis:
+    container_name: store-redis
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  postgres_data:

@@ -1,0 +1,50 @@
+# OpenTelemetry Collector — configuração do intermediário entre a app e o Datadog.
+#
+# ARQUITETURA:
+#   store-api ──OTLP gRPC:4317──► otel-collector ──Datadog exporter──► Datadog API (us5)
+#   datadog-agent ──────────────────────────────────────────────────────► Datadog API (logs + infra)
+#
+# Por que um Collector separado em vez do receptor OTLP embutido no Agent?
+#   O Agent 7.79.x tem um bug em Docker/WSL: o pipeline OTLP embutido tenta
+#   registrar process-level host metrics via /proc e falha com
+#   "failed to register process metrics: process does not exist".
+#   O otel-collector-contrib resolve isso com service.telemetry.metrics.level: none.
+#   Em produção, um Collector separado é o padrão recomendado (separação de concerns).
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317   # app → Collector (traces + métricas)
+      http:
+        endpoint: 0.0.0.0:4318   # alternativa HTTP para debugging com curl
+
+processors:
+  # batch: acumula spans/metrics antes de enviar → menos chamadas HTTPS para a API.
+  # timeout: máximo de 10s antes de forçar o flush mesmo com batch incompleto.
+  batch:
+    timeout: 10s
+    send_batch_size: 1000
+
+exporters:
+  datadog:
+    api:
+      site: us5.datadoghq.com
+      key: ${env:DD_API_KEY}   # lido da variável de ambiente do container
+
+service:
+  telemetry:
+    metrics:
+      # "none" desabilita a coleta de métricas internas do Collector.
+      # Sem isso, o Collector tenta registrar process metrics via /proc e
+      # falha em ambientes Docker/WSL com "process does not exist".
+      level: none
+  pipelines:
+    traces:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [datadog]
+    metrics:
+      receivers:  [otlp]
+      processors: [batch]
+      exporters:  [datadog]

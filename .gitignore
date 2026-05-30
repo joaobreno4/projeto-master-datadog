@@ -1,24 +1,28 @@
-# --- Segurança (NUNCA SUBIR) ---
-# Ignora as chaves reais e segredos do Datadog
-terraform.tfvars
+# ── Secrets (NUNCA subir) ────────────────────────────────────────────────────
 .env
 *.env
+terraform/terraform.tfvars
 
-# --- Terraform ---
-# Arquivos de instalação do provider
+# ── Terraform ────────────────────────────────────────────────────────────────
 .terraform/
 .terraform.lock.hcl
-
-# Arquivos de estado (podem conter dados sensíveis em texto claro)
 *.tfstate
 *.tfstate.backup
+tfplan
+*.tfplan
 
-# --- Logs e Sistema ---
-# Logs de erro e arquivos temporários do Linux/WSL
-*.log
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.Python
+
+# ── Sistema / IDE ─────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
-# --- Outros ---
-# Ignora arquivos de plano do terraform salvos
-tfplan
+*.log
+.idea/
+.vscode/
+*.swp
