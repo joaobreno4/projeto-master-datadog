@@ -46,10 +46,10 @@ O Agent 7 embutido tem um bug no pipeline OTLP em Docker/WSL que impede o gRPC d
 
 | Componente | Versão |
 |------------|--------|
-| FastAPI | 0.111.0 |
-| OpenTelemetry SDK | 1.25.0 |
-| opentelemetry-exporter-otlp-proto-grpc | 1.25.0 |
-| opentelemetry-instrumentation-fastapi/sqlalchemy/redis | 0.46b0 |
+| FastAPI | >=0.115.0 |
+| OpenTelemetry SDK | 1.42.1 |
+| opentelemetry-exporter-otlp-proto-grpc | 1.42.1 |
+| opentelemetry-instrumentation-fastapi/sqlalchemy/redis | 0.63b1 |
 | otel/opentelemetry-collector-contrib | latest (v0.153.0+) |
 | datadog/agent | 7 |
 | PostgreSQL | 15-alpine |
@@ -118,19 +118,27 @@ Recursos criados:
 ```
 .
 ├── app/
-│   ├── main.py            # FastAPI + OTel SDK (traces, métricas, logs)
+│   ├── main.py                  # FastAPI + OTel SDK (traces, métricas, logs)
 │   ├── requirements.txt
 │   └── Dockerfile
 ├── terraform/
-│   ├── main.tf            # Variáveis de ambiente e locals
-│   ├── provider.tf        # Datadog provider
-│   ├── dashboard_store.tf # Dashboard com APM e métricas de negócio
-│   ├── monitors_apm.tf    # 4 monitores de alerta
-│   ├── slo_store.tf       # 2 SLOs (availability + latency)
-│   └── variables.tf
+│   ├── main.tf                  # Variáveis de ambiente e locals
+│   ├── provider.tf              # Datadog provider
+│   ├── dashboard_store.tf       # Dashboard com APM e métricas de negócio
+│   ├── monitors_apm.tf          # 4 monitores de alerta
+│   ├── slo_store.tf             # 2 SLOs (availability + latency)
+│   ├── variables.tf
+│   └── terraform.tfvars.example # Template de credenciais (sem valores reais)
+├── .github/
+│   └── workflows/
+│       └── devsecops.yml        # Pipeline CI: secret scan, dep scan, container scan, IaC scan
+├── .pre-commit-config.yaml      # Hooks locais: detect-secrets + gitleaks + formatação
+├── .gitleaks.toml               # Allowlist para .secrets.baseline e arquivos *.example
+├── .secrets.baseline            # Baseline de falsos positivos auditados (detect-secrets)
+├── .env.example                 # Template de variáveis de ambiente (sem valores reais)
 ├── docker-compose.yml
-├── otelcol-config.yaml    # Pipeline OTLP → Datadog exporter
-└── simulate_chaos.sh      # Script de testes de caos
+├── otelcol-config.yaml          # Pipeline OTLP → Datadog exporter
+└── simulate_chaos.sh            # Script de testes de caos
 ```
 
 ## API Endpoints
@@ -211,6 +219,60 @@ Após subir a stack e gerar tráfego:
 - **Dashboards** → "Store API — Observabilidade" (provisionado pelo Terraform)
 - **Monitors** → 4 monitores ativos para error rate, latência, fila e anomalia
 - **Log Explorer** → logs JSON com botão "Go to Trace" habilitado pela correlação
+
+## DevSecOps
+
+O projeto inclui um pipeline de segurança em duas camadas: **hooks locais** (antes do commit) e **GitHub Actions** (a cada push/PR).
+
+### Pre-commit hooks
+
+Instalação local:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+A partir daí, cada `git commit` executa automaticamente:
+
+| Hook | Ferramenta | O que verifica |
+|------|-----------|----------------|
+| `trailing-whitespace` | pre-commit-hooks | Formatação |
+| `check-yaml` | pre-commit-hooks | Valida docker-compose e otelcol-config |
+| `detect-secrets` | Yelp detect-secrets v1.5.0 | Tokens, chaves e senhas por entropia e padrão |
+| `gitleaks` | gitleaks v8.27.2 | Regex de 100+ provedores (AWS, GCP, Datadog…) |
+
+Falsos positivos são gerenciados em `.secrets.baseline` (auditados com `is_secret: false`) e `.gitleaks.toml` (allowlist de arquivos `*.example` e o próprio baseline).
+
+### GitHub Actions
+
+Pipeline em 4 jobs paralelos (`.github/workflows/devsecops.yml`):
+
+```
+push/PR → main
+    │
+    ├─ secret-scan        gitleaks no histórico completo (fetch-depth: 0)
+    │                     Falha o pipeline antes de qualquer build
+    │
+    ├─ dependency-scan    pip-audit contra OSV + PyPI Advisory Database
+    │                     Gera pip-audit-report.json como artefato
+    │
+    ├─ container-scan     trivy na imagem Docker (CRITICAL/HIGH com fix → falha)
+    │                     SARIF enviado para Security → Code Scanning do GitHub
+    │
+    └─ iac-scan           trivy config no diretório terraform/
+                          Informativo — não bloqueia o pipeline
+```
+
+**Status atual:** ✅ 4/4 jobs passando
+
+### Decisões de segurança tomadas durante o projeto
+
+| CVE encontrado | Causa raiz | Correção aplicada |
+|----------------|-----------|-------------------|
+| CVE-2024-47874, CVE-2025-54121, PYSEC-2026-161 | `starlette 0.37.2` via `fastapi==0.111.0` | Atualizado para `fastapi>=0.115.0` → starlette 1.2.0 |
+| CVE-2026-23949 (HIGH) em `setuptools/_vendor/jaraco.context` | Pin `setuptools<80.0.0` necessário para `opentelemetry-instrumentation 0.46b0` que usava `pkg_resources` | Migrado OTel instrumentation para `0.63b1` (usa `importlib.metadata`) → pin removido |
+| CVEs em `pip 25.0.1` (imagem base) | `python:3.12-slim` vem com pip desatualizado | `pip install --upgrade pip` adicionado ao Dockerfile e ao step de CI |
 
 ## Problemas Conhecidos
 
